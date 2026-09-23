@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { Crosshair, Minus, Plus } from "lucide-react";
 import type { Transaction } from "./types";
 import { money } from "./logic";
-
 export default function Graph({
   rows,
   account,
@@ -113,7 +112,18 @@ export default function Graph({
             markerHeight="6"
             orient="auto-start-reverse"
           >
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="#b8b8b8" />
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#efac56" />
+          </marker>
+          <marker
+            id="selected-arrow"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#69b8ff" />
           </marker>
         </defs>
         <rect width="880" height="600" fill="url(#grid)" />
@@ -151,11 +161,11 @@ export default function Graph({
                 <path d={d} className="edge-hit" />
                 <path
                   d={d}
-                  stroke={highlighted ? "#c7c7c7" : hot ? "#939393" : "#505050"}
+                  stroke={highlighted ? "#69b8ff" : hot ? "#efac56" : "#717780"}
                   strokeWidth={highlighted ? 2.8 : 1.3}
                   fill="none"
-                  markerEnd={`url(#${hot ? "hot-arrow" : "arrow"})`}
-                  strokeDasharray={returning ? "5 5" : undefined}
+                  markerEnd={`url(#${highlighted ? "selected-arrow" : hot ? "hot-arrow" : "arrow"})`}
+                  strokeDasharray={hot && !highlighted ? "5 4" : undefined}
                 />
                 {(hot || highlighted) && i < 24 && (
                   <text
@@ -203,9 +213,9 @@ export default function Graph({
                   fill={active ? "#323232" : "#202020"}
                   stroke={
                     active
-                      ? "#c5c5c5"
+                      ? "#69b8ff"
                       : risk >= threshold
-                        ? "#919191"
+                        ? "#efac56"
                         : "#595959"
                   }
                   strokeWidth={active ? 2 : 1}
@@ -220,7 +230,8 @@ export default function Graph({
                   {id}
                 </text>
                 <text y="63" className="node-sub">
-                  {Math.round(risk * 100)} / 100 evidence score
+                  {(risk * 100).toFixed(risk < 0.001 ? 4 : 2)} / 100 evidence
+                  score
                 </text>
               </g>
             );
@@ -233,7 +244,7 @@ export default function Graph({
       <div className="graph-legend">
         <span>
           <i className="dot mint" />
-          Selected path
+          Selected transfer / path
         </span>
         <span>
           <i className="dot amber" />
@@ -241,7 +252,7 @@ export default function Graph({
         </span>
         <span>
           <i className="dot gray" />
-          Other transfer
+          Below threshold
         </span>
       </div>
       <div className="graph-tools">

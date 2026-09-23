@@ -54,3 +54,25 @@ def test_train_resume_export_and_offline_parity(tmp_path, monkeypatch):
     train(args)
     assert json.loads((export/"evaluation.json").read_text())["steps"]==3
     assert verify(export)["parity"]=="passed"
+
+
+@pytest.mark.ml
+def test_small_probabilities_preserve_threshold_precision(monkeypatch):
+    torch = pytest.importorskip("torch")
+    common = pytest.importorskip("laya.common")
+    from types import SimpleNamespace
+    from aml.scoring import Scorer
+    monkeypatch.delenv("AML_MODEL_DIR", raising=False)
+    scorer = Scorer()
+    monkeypatch.setattr(common, "build_sequence", lambda *args: ([1, 2], [0, 1]))
+    monkeypatch.setattr(common, "collate_items", lambda *args: {k: torch.tensor([[1]]) for k in
+        ("input_ids", "attention_mask", "marker_pos", "marker_mask", "qtype")})
+    class Model:
+        def __call__(self, **kwargs):
+            return torch.tensor([[0.0, -10.0]]), None
+    scorer.agent = SimpleNamespace(tok=SimpleNamespace(pad_token_id=0),
+        cfg={"max_len":512,"head_max_len":128}, model=Model(), device="cpu",
+        temperature_by_options={"noul:2":1.0}, temperature=[1.0,1.0,1.0])
+    probability = scorer.probability({})
+    assert 0.00004 < probability < 0.00005
+    assert probability > 0.000043  # Four-decimal rounding would incorrectly yield zero.

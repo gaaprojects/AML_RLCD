@@ -32,11 +32,27 @@ class Scorer:
     def status(self):
         return {"mode": "laya" if self.agent else "rules", "name": "Laya / AML fine-tuned" if self.agent else "Demonstration rules", "error": self.error, "manifest": self.manifest, "default_threshold": self.manifest.get("threshold", 0.35) if self.agent else 0.35}
 
+    def probability(self, state):
+        # The upstream convenience API rounds to four decimals. AML thresholds
+        # can be smaller than 0.0001, so use calibrated logits without rounding.
+        import torch
+        from laya.common import build_sequence, collate_items, QTYPES
+        ids, markers = build_sequence(self.agent.tok, state, QUESTION,
+                                      self.agent.cfg["max_len"], self.agent.cfg["head_max_len"])
+        if len(markers) != 2:
+            raise ValueError("Expected two binary decision markers")
+        item = {"ids": ids, "markers": markers, "qtype": QTYPES["noul"]}
+        batch = collate_items([[item]], self.agent.tok.pad_token_id)
+        with torch.inference_mode():
+            logits, _ = self.agent.model(**{k: batch[k].to(self.agent.device) for k in
+                ("input_ids", "attention_mask", "marker_pos", "marker_mask", "qtype")})
+            temperature = self.agent.temperature_by_options.get("noul:2", self.agent.temperature[QTYPES["noul"]])
+            return float(torch.softmax(logits[0, :2].float() / temperature, dim=-1)[1])
+
     def predict(self, tx, features):
         score, reasons = rule_score(tx, features)
         if self.error:
             raise ValueError(f"Model loading failed: {self.error}")
         if self.agent:
-            q = {"risk": {"type": QUESTION["t"], "instructions": QUESTION["ins"]}}
-            score = self.agent.predict(model_state(tx, features), q)["answers"]["risk"]["noul"]
+            score = self.probability(model_state(tx, features))
         return score, reasons

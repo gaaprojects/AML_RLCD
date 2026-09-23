@@ -27,12 +27,12 @@ import {
 } from "lucide-react";
 import Graph from "./Graph";
 import Editor from "./Editor";
+import InferenceMonitor from "./InferenceMonitor";
 import { clock, evaluate, money, pct } from "./logic";
 import type { PathResult, Scenario } from "./types";
-
 export default function App() {
   const [scenario, setScenario] = useState<Scenario | null>(null),
-    [sid, setSid] = useState("demo"),
+    [sid, setSid] = useState("default"),
     [list, setList] = useState<{ id: string; name: string }[]>([]);
   const [error, setError] = useState(""),
     [loading, setLoading] = useState(true),
@@ -52,6 +52,9 @@ export default function App() {
     [pathError, setPathError] = useState(""),
     [busyPaths, setBusyPaths] = useState(false);
   const [toast, setToast] = useState("");
+  const [run, setRun] = useState(0);
+  const [inferenceTotal, setInferenceTotal] = useState(0);
+  const [cached, setCached] = useState(false);
   const activeContext = useRef("");
   activeContext.current = `${sid}:${visible}:${account}`;
   useEffect(() => {
@@ -59,46 +62,63 @@ export default function App() {
     setLoading(true);
     setError("");
     setPlaying(false);
-    Promise.all([
-      fetch(`/api/scenarios/${sid}`).then(async (r) => {
-        if (!r.ok) {
-          const e = await r.json();
-          throw Error(e.detail || "Unable to load scenario");
-        }
-        return r.json();
-      }),
-      fetch("/api/scenarios").then((r) => r.json()),
-    ])
-      .then(([s, l]) => {
-        if (!current) return;
-        setScenario(s);
-        setList(l);
-        setVisible(s.transactions.length);
-        setThreshold(s.model.default_threshold);
-        setSelected(
-          s.transactions.find(
-            (r: { score: number }) => r.score >= s.model.default_threshold,
-          )?.id ||
-            s.transactions[0]?.id ||
-            "",
+    setCached(false);
+    setScenario(null);
+    setVisible(0);
+    fetch("/api/scenarios")
+      .then((r) => r.json())
+      .then((l) => current && setList(l));
+    const stream = new EventSource(
+      `/api/scenarios/${sid}/stream?fresh=${run > 0}`,
+    );
+    stream.addEventListener("meta", (event) => {
+      if (!current) return;
+      const s = JSON.parse((event as MessageEvent).data);
+      setScenario(s);
+      setInferenceTotal(s.total);
+      setThreshold(s.model.default_threshold);
+      setAccount("");
+      setSelected("");
+      setPaths([]);
+      setPath([]);
+      setPathsRequested(false);
+    });
+    stream.addEventListener("rows", (event) => {
+      if (!current) return;
+      const batch = JSON.parse((event as MessageEvent).data);
+      setScenario((s) =>
+        s ? { ...s, transactions: [...s.transactions, ...batch] } : s,
+      );
+      setVisible((n) => n + batch.length);
+      setAccount((a) => a || batch[0]?.source || "");
+      setSelected((a) => a || batch[0]?.id || "");
+    });
+    stream.addEventListener("complete", (event) => {
+      if (!current) return;
+      setCached(JSON.parse((event as MessageEvent).data).cached);
+      setLoading(false);
+      stream.close();
+    });
+    stream.addEventListener("failure", (event) => {
+      if (!current) return;
+      setError(JSON.parse((event as MessageEvent).data).detail);
+      setLoading(false);
+      stream.close();
+    });
+    stream.onerror = () => {
+      if (current) {
+        setError(
+          "Inference connection interrupted. Reconnect to retry; check local model status.",
         );
-        setAccount(
-          sid === "demo" ? "HARBOR-02" : s.transactions[0]?.source || "",
-        );
-        setPaths([]);
-        setPath([]);
-        setPathsRequested(false);
-      })
-      .catch(
-        (e) =>
-          current &&
-          setError(`${e.message}. Check that the local API is running.`),
-      )
-      .finally(() => current && setLoading(false));
+        setLoading(false);
+      }
+      stream.close();
+    };
     return () => {
       current = false;
+      stream.close();
     };
-  }, [sid]);
+  }, [sid, run]);
   useEffect(() => {
     if (!playing || !scenario) return;
     const id = setInterval(
@@ -248,6 +268,7 @@ export default function App() {
             { name: "Investigation", icon: Network },
             { name: "Transactions", icon: Layers },
             { name: "Evaluation", icon: Activity },
+            { name: "Inference monitor", icon: Target },
             { name: "Model & data", icon: Database },
           ].map(({ name, icon: Icon }) => (
             <button
@@ -298,6 +319,27 @@ export default function App() {
             <span className="version">v0.1</span>
           </div>
         </header>
+        <div className="inference-banner" role="status">
+          <span>
+            <i className={`dot ${loading ? "amber" : "mint"}`} />{" "}
+            {loading
+              ? "Live inference"
+              : cached
+                ? "Cached predictions"
+                : "Inference complete"}{" "}
+            · {scenario.transactions.length.toLocaleString()} /{" "}
+            {inferenceTotal.toLocaleString()} transactions ·{" "}
+            {scenario.origin === "ibm"
+              ? "IBM synthetic dataset"
+              : scenario.origin}
+          </span>
+          <button onClick={() => setTab("Inference monitor")}>
+            View inference monitor
+          </button>
+          <button disabled={loading} onClick={() => setRun((n) => n + 1)}>
+            Run inference again
+          </button>
+        </div>
         <div className="page-heading">
           <div>
             <div className="eyebrow">
@@ -310,7 +352,9 @@ export default function App() {
                   ? "Transactions"
                   : tab === "Evaluation"
                     ? "Evaluation"
-                    : "Model & data"}
+                    : tab === "Inference monitor"
+                      ? "Inference monitor"
+                      : "Model & data"}
             </h1>
             <p>
               {tab === "Investigation"
@@ -335,6 +379,9 @@ export default function App() {
               value={sid}
               onChange={(e) => setSid(e.target.value)}
             >
+              {sid === "default" && (
+                <option value="default">{scenario.name}</option>
+              )}
               {list.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -352,6 +399,7 @@ export default function App() {
           <div className="replay-controls">
             <button
               aria-label="Reset replay"
+              disabled={loading}
               onClick={() => {
                 setPlaying(false);
                 setVisible(0);
@@ -361,6 +409,7 @@ export default function App() {
             </button>
             <button
               className="play-button"
+              disabled={loading}
               aria-label={playing ? "Pause replay" : "Play replay"}
               onClick={() => {
                 if (visible >= scenario.transactions.length) setVisible(0);
@@ -371,7 +420,7 @@ export default function App() {
             </button>
             <button
               aria-label="Next transaction"
-              disabled={visible >= scenario.transactions.length}
+              disabled={loading || visible >= scenario.transactions.length}
               onClick={() =>
                 setVisible((n) => Math.min(n + 1, scenario.transactions.length))
               }
@@ -391,7 +440,7 @@ export default function App() {
               {visible} / {scenario.transactions.length}
             </span>
             <span className="muted replay-status">
-              {playing ? "REPLAYING" : "PAUSED"}
+              {loading ? "SCORING LIVE" : playing ? "REPLAYING" : "PAUSED"}
             </span>
           </div>
         </div>
@@ -527,7 +576,7 @@ export default function App() {
                   <span
                     className={risk >= threshold ? "amber-text" : "mint-text"}
                   >
-                    {Math.round(risk * 100)} / 100
+                    {(risk * 100).toFixed(risk < 0.001 ? 4 : 2)} / 100
                   </span>
                   <span>Investigation score</span>
                 </div>
@@ -722,14 +771,14 @@ export default function App() {
                               r.score >= threshold ? "amber-text" : "muted"
                             }
                           >
-                            {Math.round(r.score * 100)}
+                            {(r.score * 100).toFixed(r.score < 0.001 ? 4 : 2)}
                           </span>
                           <i>
                             <b
                               style={{
                                 width: `${r.score * 100}%`,
                                 background:
-                                  r.score >= threshold ? "#aaaaaa" : "#7b7b7b",
+                                  r.score >= threshold ? "#efac56" : "#7b7b7b",
                               }}
                             />
                           </i>
@@ -838,7 +887,11 @@ export default function App() {
                     <polyline
                       key={metric}
                       points={Array.from({ length: 101 }, (_, n) => {
-                        const m = evaluate(rows, n / 100)[metric];
+                        const t =
+                          scenario.model.mode === "laya"
+                            ? 10 ** (-7 + n * 0.07)
+                            : n / 100;
+                        const m = evaluate(rows, t)[metric];
                         return m === null
                           ? ""
                           : `${40 + n * 5.8},${220 - m * 190}`;
@@ -846,20 +899,41 @@ export default function App() {
                         .filter(Boolean)
                         .join(" ")}
                       fill="none"
-                      stroke={i ? "#aaaaaa" : "#c2c2c2"}
+                      stroke={i ? "#efac56" : "#69b8ff"}
+                      strokeDasharray={i ? "6 4" : undefined}
                       strokeWidth="2.5"
                     />
                   ))}
                   <line
-                    x1={40 + threshold * 580}
-                    x2={40 + threshold * 580}
+                    x1={
+                      40 +
+                      (scenario.model.mode === "laya"
+                        ? Math.max(
+                            0,
+                            (Math.log10(Math.max(1e-7, threshold)) + 7) / 7,
+                          )
+                        : threshold) *
+                        580
+                    }
+                    x2={
+                      40 +
+                      (scenario.model.mode === "laya"
+                        ? Math.max(
+                            0,
+                            (Math.log10(Math.max(1e-7, threshold)) + 7) / 7,
+                          )
+                        : threshold) *
+                        580
+                    }
                     y1="20"
                     y2="220"
                     stroke="#ececec"
                     strokeDasharray="4 4"
                   />
                   <text x="40" y="248" fill="#8f8f8f" fontSize="12">
-                    0.0 threshold
+                    {scenario.model.mode === "laya"
+                      ? "1e-7 · log threshold"
+                      : "0.0 threshold"}
                   </text>
                   <text x="555" y="248" fill="#8f8f8f" fontSize="12">
                     1.0
@@ -903,6 +977,9 @@ export default function App() {
               </div>
             </div>
           </section>
+        )}
+        {tab === "Inference monitor" && (
+          <InferenceMonitor threshold={threshold} />
         )}
         {tab === "Model & data" && (
           <section className="panel model-panel">
@@ -964,8 +1041,8 @@ export default function App() {
               </p>
               <p>
                 Machine target: Windows 11 · Intel i5-12450H · 8 GB RAM · CPU
-                inference. Real checkpoint latency remains to be measured after
-                training.
+                inference. Open Inference monitor for measured CPU latency and
+                live predictions.
               </p>
               {scenario.model.manifest && (
                 <pre>{JSON.stringify(scenario.model.manifest, null, 2)}</pre>
@@ -981,22 +1058,49 @@ export default function App() {
               <small>Lower the threshold to surface more activity</small>
             </div>
           </div>
-          <span className="threshold-value mono">{threshold.toFixed(2)}</span>
+          <span className="threshold-value mono">
+            {threshold < 0.001
+              ? threshold.toExponential(3)
+              : threshold.toFixed(4)}
+          </span>
           <div className="slider-group">
             <input
               aria-label="Detection threshold"
               type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={threshold}
-              onChange={(e) => setThreshold(+e.target.value)}
+              min={scenario.model.mode === "laya" ? -7 : 0}
+              max={scenario.model.mode === "laya" ? 0 : 1}
+              step={scenario.model.mode === "laya" ? 0.01 : 0.001}
+              value={
+                scenario.model.mode === "laya"
+                  ? Math.log10(Math.max(1e-7, threshold))
+                  : threshold
+              }
+              onChange={(e) =>
+                setThreshold(
+                  scenario.model.mode === "laya"
+                    ? 10 ** +e.target.value
+                    : +e.target.value,
+                )
+              }
             />
             <div>
               <span>Higher recall</span>
               <span>Fewer alerts</span>
             </div>
           </div>
+          <input
+            className="exact-threshold"
+            aria-label="Exact detection threshold"
+            type="number"
+            min="0"
+            max="1"
+            step="any"
+            value={threshold}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              if (Number.isFinite(v) && v >= 0 && v <= 1) setThreshold(v);
+            }}
+          />
           <button
             onClick={() => setThreshold(scenario.model.default_threshold)}
           >
@@ -1032,9 +1136,6 @@ export default function App() {
           <Check size={16} />
           {toast}
         </div>
-      )}
-      {loading && scenario && (
-        <div className="loading-overlay">Loading and scoring scenario…</div>
       )}
     </div>
   );

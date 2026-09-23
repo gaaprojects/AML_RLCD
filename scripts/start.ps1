@@ -1,4 +1,4 @@
-param([string]$ModelDir = "", [int]$Port = 8000)
+param([string]$ModelDir = "models/laya-aml", [int]$Port = 8000)
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot

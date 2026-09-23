@@ -17,9 +17,9 @@ def verify(path):
     times=[]
     for _ in range(4):
         start=perf_counter()
-        result=scorer.agent.predict(fixture["state"],{"risk":{"type":QUESTION["t"],"instructions":QUESTION["ins"]}})
+        result=scorer.probability(fixture["state"])
         times.append(perf_counter()-start)
-    actual=result["answers"]["risk"]["noul"]
+    actual=result
     delta=abs(actual-fixture["expected_probability"])
     if delta>fixture["absolute_tolerance"]:
         raise ValueError(f"Export parity failed: {delta}")

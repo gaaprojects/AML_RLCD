@@ -42,3 +42,44 @@ def test_bad_checkpoint_does_not_silently_fall_back(client,monkeypatch,tmp_path)
     monkeypatch.setattr(api,"scorer",Scorer())
     assert client.get("/api/health").json()["status"]=="degraded"
     assert client.get("/api/scenarios/demo").status_code==503
+
+
+def test_stream_records_actual_calls_and_distinguishes_cache(client):
+    import json
+    def events(response):
+        return [(block.splitlines()[0][7:], json.loads(block.splitlines()[1][6:]))
+                for block in response.text.strip().split("\n\n")]
+    first = events(client.get("/api/scenarios/demo/stream?fresh=true"))
+    assert first[0][0] == "meta"
+    rows = [row for kind, payload in first if kind == "rows" for row in payload]
+    assert len(rows) == 46
+    assert all(row["inference_ms"] >= 0 for row in rows)
+    assert first[-1] == ("complete", {"cached": False})
+    status = client.get("/api/inference").json()
+    assert status["state"] == "complete"
+    assert status["processed"] == status["total"] == 46
+    assert len(status["recent"]) == 46
+    second = events(client.get("/api/scenarios/demo/stream"))
+    assert second[-1] == ("complete", {"cached": True})
+    after = client.get("/api/inference").json()
+    assert after["processed"] == 46
+    assert after["cache_hits"] == status["cache_hits"] + 1
+
+
+def test_default_prefers_ibm_and_stream_errors_are_visible(client, monkeypatch):
+    import json
+    from aml.demo import demo_scenario
+    source = demo_scenario().model_dump(mode="json")
+    source["origin"] = "ibm"
+    source["name"] = "Imported IBM replay"
+    with api.connection() as db:
+        db.execute("INSERT INTO scenarios VALUES (?,?)", ("ibm-test", json.dumps(source)))
+    assert api.get_scenario("default").name == "Imported IBM replay"
+    def broken(*args):
+        raise RuntimeError("Prediction failed")
+    monkeypatch.setattr(api.scorer, "predict", broken)
+    response = client.get("/api/scenarios/default/stream?fresh=true")
+    assert 'event: failure' in response.text
+    status = client.get("/api/inference").json()
+    assert status["state"] == "error"
+    assert status["last_error"] == "Prediction failed"

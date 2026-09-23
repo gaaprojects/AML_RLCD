@@ -1535,7 +1535,6 @@ tbody tr:hover {
     left: 10px;
   }
 }
-
 /* Monochrome analyst workspace: hierarchy through contrast and line weight. */
 :root {
   background: #0b0b0b;
@@ -1647,4 +1646,109 @@ tbody tr:hover {
 }
 .play-button {
   border-radius: 3px;
+}
+/* Functional color: dark neutral shell with consistent, labeled data signals. */
+:root {
+  --mint: #69b8ff;
+  --amber: #efac56;
+}
+.graph-edge.highlighted > path:nth-child(2) {
+  stroke: #69b8ff;
+}
+.status-badge.alert {
+  color: #efac56;
+  border-color: #74532c;
+  background: #302619;
+}
+.status-badge.clear {
+  color: #b4bbc5;
+}
+.risk-track i {
+  background: #efac56;
+}
+.confusion > div:nth-child(1) {
+  border-top: 3px solid #65c7a0;
+}
+.confusion > div:nth-child(2) {
+  border-top: 3px solid #efac56;
+}
+.confusion > div:nth-child(3) {
+  border-top: 3px solid #db88bf;
+}
+.confusion > div:nth-child(3) b {
+  color: #db88bf;
+}
+.confusion > div:nth-child(4) {
+  border-top: 3px solid #8c9cad;
+}
+.inference-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 28px;
+  border-bottom: 1px solid var(--border);
+  background: #17191b;
+}
+.inference-banner > span {
+  flex: 1;
+  min-width: 240px;
+}
+.monitor-panel {
+  margin: 24px 28px;
+  padding: 20px;
+}
+.monitor-panel .panel-heading {
+  padding: 0 0 12px;
+}
+.monitor-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+.monitor-metrics article {
+  border: 1px solid var(--border);
+  padding: 16px;
+}
+.monitor-metrics small {
+  display: block;
+  color: var(--muted);
+}
+.monitor-metrics strong {
+  display: block;
+  font-size: 22px;
+  margin-top: 8px;
+}
+.monitor-panel progress {
+  width: 100%;
+  accent-color: #69b8ff;
+}
+.latency-chart {
+  width: 100%;
+  max-height: 230px;
+  background: #101214;
+  border: 1px solid var(--border);
+  padding: 12px;
+}
+.benchmark-note {
+  border-left: 3px solid #efac56;
+  background: #1c1914;
+  padding: 16px;
+  margin: 20px 0;
+}
+.exact-threshold {
+  width: 145px;
+  padding: 8px;
+}
+@media (max-width: 900px) {
+  .monitor-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .monitor-panel {
+    margin: 16px;
+  }
+  .inference-banner {
+    padding: 12px 16px;
+  }
 }

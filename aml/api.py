@@ -8,6 +8,9 @@ from contextlib import contextmanager
 from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import StreamingResponse
+from time import perf_counter, time
+from collections import deque
 from aml.domain import Scenario
 from aml.demo import demo_scenario
 from aml.features import History
@@ -21,6 +24,33 @@ app = FastAPI(title="AML / Investigation API")
 scorer = Scorer()
 scoring_lock = Lock()
 score_cache = OrderedDict()
+monitor_lock = Lock()
+monitor = {"state": "idle", "processed": 0, "total": 0, "errors": 0,
+           "cache_hits": 0, "total_ms": 0.0, "started": None, "scenario": "", "last_error": None}
+recent = deque(maxlen=120)
+
+
+def record_inference(tx, score, latency):
+    with monitor_lock:
+        monitor["processed"] += 1
+        monitor["total_ms"] += latency
+        recent.append({"id": tx.id, "score": score, "label": tx.label,
+                       "latency_ms": latency, "at": time()})
+
+
+@app.get("/api/inference")
+def inference_status():
+    with monitor_lock:
+        result = dict(monitor)
+        result["recent"] = list(recent)
+    n = result["processed"]
+    result["mean_ms"] = result["total_ms"] / n if n else None
+    result["throughput"] = n * 1000 / result["total_ms"] if result["total_ms"] else 0
+    times = sorted(r["latency_ms"] for r in result["recent"])
+    result["p95_ms"] = times[min(len(times)-1, int(len(times)*.95))] if times else None
+    result["model"] = scorer.status()
+    return result
+
 
 
 @contextmanager
@@ -35,6 +65,12 @@ def connection():
 
 
 def get_scenario(sid):
+    if sid == "default":
+        with connection() as db:
+            for saved_id, body in db.execute("SELECT id,body FROM scenarios ORDER BY rowid DESC"):
+                if json.loads(body).get("origin") == "ibm":
+                    return Scenario.model_validate_json(body)
+        return demo_scenario()
     if sid == "demo":
         return demo_scenario()
     with connection() as db:
@@ -84,6 +120,68 @@ def scenario(sid: str):
     except ValueError as exc:
         raise HTTPException(503, str(exc)) from exc
     return {"id": sid, "name": value.name, "description": value.description, "origin": value.origin, "transactions": rows, "model": scorer.status()}
+
+
+@app.get("/api/scenarios/{sid}/stream")
+def stream_scenario(sid: str, fresh: bool = False):
+    value = get_scenario(sid)
+    if scorer.error:
+        raise HTTPException(503, scorer.error)
+
+    def event(kind, payload):
+        return f"event: {kind}\ndata: {json.dumps(payload)}\n\n"
+
+    def generate():
+        import hashlib
+        key = (scorer, hashlib.sha256(value.model_dump_json().encode()).hexdigest())
+        yield event("meta", {"id": sid, "name": value.name, "description": value.description,
+                              "origin": value.origin, "transactions": [], "model": scorer.status(),
+                              "total": len(value.transactions)})
+        with scoring_lock:
+            if not fresh and key in score_cache:
+                with monitor_lock:
+                    monitor["cache_hits"] += 1
+                yield event("rows", score_cache[key])
+                yield event("complete", {"cached": True})
+                return
+            with monitor_lock:
+                monitor.update(state="running", processed=0, total=len(value.transactions),
+                               total_ms=0.0, started=time(), scenario=value.name, last_error=None)
+                recent.clear()
+            history, rows = History(), []
+            try:
+                for tx in sorted(value.transactions, key=lambda t: (t.timestamp, t.id)):
+                    features = history.observe(tx)
+                    start = perf_counter()
+                    score, reasons = scorer.predict(tx, features)
+                    latency = (perf_counter()-start)*1000
+                    record_inference(tx, score, latency)
+                    row = {**tx.model_dump(mode="json"), "score": score, "reasons": reasons,
+                           "features": features, "inference_ms": latency}
+                    rows.append(row)
+                    yield event("rows", [row])
+                score_cache[key] = rows
+                if len(score_cache) > 3:
+                    score_cache.popitem(last=False)
+                with monitor_lock:
+                    monitor["state"] = "complete"
+                yield event("complete", {"cached": False})
+            except GeneratorExit:
+                with monitor_lock:
+                    monitor["state"] = "cancelled"
+                raise
+            except Exception as exc:
+                with monitor_lock:
+                    monitor.update(state="error", last_error=str(exc))
+                    monitor["errors"] += 1
+                yield event("failure", {"detail": str(exc)})
+            finally:
+                with monitor_lock:
+                    if monitor["state"] == "running":
+                        monitor["state"] = "cancelled"
+
+    return StreamingResponse(generate(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.post("/api/scenarios", status_code=201)

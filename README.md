@@ -38,12 +38,12 @@ Account risk is the maximum observed incident transaction score. It is not a cal
 
 On 23 September 2026, complete-file preparation successfully processed 5,078,345 transactions from `HI-Small_Trans.csv` (SHA-256 `b19d39f515523373f991b689c07e11e7b0b95c17a2c27a87d91584ae16c5b040`). The chronological partitions contain:
 
-| Partition | Transactions | Laundering labels |
-| --- | ---: | ---: |
-| Train | 3,046,861 | 2,297 |
-| Validation | 761,731 | 777 |
-| Calibration | 507,650 | 542 |
-| Test | 762,103 | 1,561 |
+| Partition   | Transactions | Laundering labels |
+| ----------- | -----------: | ----------------: |
+| Train       |    3,046,861 |             2,297 |
+| Validation  |      761,731 |               777 |
+| Calibration |      507,650 |               542 |
+| Test        |      762,103 |             1,561 |
 
 The first 2,000 transactions are installed in the local investigation database as **IBM / HI-Small_Trans**. Dataset preparation is verified; an AML-trained Laya checkpoint and its predictive performance have not yet been produced. The notebook's small default training run is a feasibility pilot, not a benchmark.
 
@@ -129,3 +129,13 @@ Tests cover causal features, currency boundaries, chronological splits, path ord
 - The bundled Harbor scenario was authored for this application and is not redistributed IBM data.
 
 This is a research simulator. Synthetic-data performance does not establish performance on real financial activity.
+
+## Installed checkpoint and live monitoring
+
+The downloaded Colab export is installed locally in `models/laya-aml`; model weights remain excluded from Git. `scripts/start.ps1` now loads this directory by default. Pass `-ModelDir ""` explicitly to run demonstration rules instead.
+
+The workspace selects the newest imported IBM replay by default. Predictions stream progressively while **Inference monitor** reports model latency, rolling p95, model throughput, progress, errors and the latest 120 calls. Its table shows the latest 20 predictions. Replay controls become available when scoring completes. Replaying cached results does not execute model inference; **Run inference again** forces fresh model calls. Telemetry and the three-scenario prediction cache last for the server session.
+
+Laya inference preserves full probability precision before applying thresholds. The slider uses a logarithmic scale from 1e-7 to 1 for Laya; the adjacent numeric field permits exact values, including zero. Blue marks selected paths and recall, amber marks alerts and precision, and dashed lines distinguish the latter. Confusion-matrix outcomes also have text labels and separate accents.
+
+The installed pilot's exported test report contains 10,000 transactions and 24 positives: recall 83.33%, precision 0.45%, and 4,390 false alerts. Its 2,000-row imported replay is from the beginning of the training period; replay metrics are not held-out test performance. IBM transactions are synthetic, not a live bank feed.
