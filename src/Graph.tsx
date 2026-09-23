@@ -21,11 +21,12 @@ export default function Graph({
 }) {
   const [zoom, setZoom] = useState(1);
   const layout = useMemo(() => {
-    const all = [...new Set(rows.flatMap((r) => [r.source, r.target]))];
+    const connections = rows.filter((r) => r.source !== r.target);
+    const all = [...new Set(connections.flatMap((r) => [r.source, r.target]))];
     const focus = all.includes(account) ? account : all[0];
     const neighbors = new Set<string>(focus ? [focus] : []);
     // Include the selected path first, then grow the account neighborhood.
-    for (const r of rows.filter(
+    for (const r of connections.filter(
       (r) => path.includes(r.id) || r.id === selected,
     )) {
       neighbors.add(r.source);
@@ -33,7 +34,7 @@ export default function Graph({
     }
     for (let hop = 0; hop < 3; hop++) {
       const frontier = new Set(neighbors);
-      for (const r of rows) {
+      for (const r of connections) {
         if (frontier.has(r.source) || frontier.has(r.target)) {
           for (const id of [r.source, r.target])
             if (neighbors.size < 24) neighbors.add(id);
@@ -67,7 +68,7 @@ export default function Graph({
     return {
       ids,
       pos,
-      edges: rows.filter((r) => pos[r.source] && pos[r.target]),
+      edges: connections.filter((r) => pos[r.source] && pos[r.target]),
       hidden: all.length - ids.length,
     };
   }, [rows, account, path, selected]);
@@ -254,8 +255,10 @@ export default function Graph({
           })}
         </g>
       </svg>
-      {!rows.length && (
-        <div className="graph-empty">Step forward to reveal transactions.</div>
+      {!layout.edges.length && (
+        <div className="graph-empty">
+          No transfers between different accounts in this view.
+        </div>
       )}
       <div className="graph-legend">
         <span>

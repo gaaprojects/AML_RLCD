@@ -95,3 +95,24 @@ def test_resource_metrics_and_completed_timer(client):
     assert first["resources"]["rss_mb"] > 0
     assert first["resources"]["logical_cpus"] >= 1
     assert 0 <= first["resources"]["system_ram_percent"] <= 100
+
+
+def test_stop_interrupts_between_predictions_and_never_caches_partial(client, monkeypatch):
+    original = api.scorer.predict
+    calls = []
+    def predict(tx, features):
+        calls.append(tx.id)
+        run_id = next(iter(api.active_runs))
+        assert client.post(f"/api/inference/{run_id}/stop").json()["stop_requested"]
+        return original(tx, features)
+    monkeypatch.setattr(api.scorer, "predict", predict)
+    response = client.get("/api/scenarios/demo/stream?fresh=true")
+    assert len(calls) == 1
+    assert "event: stopped" in response.text
+    assert "event: complete" not in response.text
+    assert client.get("/api/inference").json()["state"] == "stopped"
+    assert not api.active_runs
+    monkeypatch.setattr(api.scorer, "predict", original)
+    response = client.get("/api/scenarios/demo/stream?fresh=true")
+    assert "event: complete" in response.text
+    assert client.get("/api/inference").json()["processed"] == 46

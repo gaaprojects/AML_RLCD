@@ -41,3 +41,33 @@ describe("source transaction graph", () => {
     expect(money(123.45, "USD")).toBe("123.45 USD");
   });
 });
+
+it("does not display self-transfer edges or isolated self-only accounts", () => {
+  const row: Transaction = {
+    id: "self",
+    source: "SELF_ONLY",
+    target: "SELF_ONLY",
+    timestamp: "2022-09-01T00:00:00Z",
+    amount: 10,
+    currency: "USD",
+    payment_format: "ACH",
+    label: 0,
+    score: 0.1,
+    reasons: [],
+    features: {},
+  };
+  const html = renderToStaticMarkup(
+    <Graph
+      rows={[row]}
+      account="SELF_ONLY"
+      selected="self"
+      path={[]}
+      threshold={0.5}
+      onAccount={() => {}}
+      onTransaction={() => {}}
+    />,
+  );
+  expect(html).not.toContain('class="edge-hit"');
+  expect(html).not.toContain("Inspect account SELF_ONLY");
+  expect(html).toContain("No transfers between different accounts");
+});

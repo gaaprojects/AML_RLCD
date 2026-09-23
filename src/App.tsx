@@ -55,6 +55,24 @@ export default function App() {
   const [run, setRun] = useState(0);
   const [inferenceTotal, setInferenceTotal] = useState(0);
   const [cached, setCached] = useState(false);
+  const [stopped, setStopped] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const inferenceRun = useRef("");
+  async function stopWork() {
+    setPlaying(false);
+    if (!loading || !inferenceRun.current) return;
+    setStopping(true);
+    try {
+      const response = await fetch(
+        `/api/inference/${inferenceRun.current}/stop`,
+        { method: "POST" },
+      );
+      if (!response.ok) throw Error("Unable to stop inference");
+    } catch {
+      setToast("Stop request failed. Please try again.");
+      setStopping(false);
+    }
+  }
   const activeContext = useRef("");
   activeContext.current = `${sid}:${visible}:${account}`;
   useEffect(() => {
@@ -63,6 +81,9 @@ export default function App() {
     setError("");
     setPlaying(false);
     setCached(false);
+    setStopped(false);
+    setStopping(false);
+    inferenceRun.current = "";
     setScenario(null);
     setVisible(0);
     fetch("/api/scenarios")
@@ -74,6 +95,7 @@ export default function App() {
     stream.addEventListener("meta", (event) => {
       if (!current) return;
       const s = JSON.parse((event as MessageEvent).data);
+      inferenceRun.current = s.run_id;
       setScenario(s);
       setInferenceTotal(s.total);
       setThreshold(s.model.default_threshold);
@@ -92,6 +114,14 @@ export default function App() {
       setVisible((n) => n + batch.length);
       setAccount((a) => a || batch[0]?.source || "");
       setSelected((a) => a || batch[0]?.id || "");
+    });
+    stream.addEventListener("stopped", () => {
+      if (!current) return;
+      setStopped(true);
+      setStopping(false);
+      setLoading(false);
+      setPlaying(false);
+      stream.close();
     });
     stream.addEventListener("complete", (event) => {
       if (!current) return;
@@ -116,6 +146,10 @@ export default function App() {
     };
     return () => {
       current = false;
+      if (inferenceRun.current)
+        fetch(`/api/inference/${inferenceRun.current}/stop`, {
+          method: "POST",
+        }).catch(() => {});
       stream.close();
     };
   }, [sid, run]);
@@ -322,17 +356,27 @@ export default function App() {
         <div className="inference-banner" role="status">
           <span>
             <i className={`dot ${loading ? "amber" : "mint"}`} />{" "}
-            {loading
-              ? "Live inference"
-              : cached
-                ? "Cached predictions"
-                : "Inference complete"}{" "}
+            {stopping
+              ? "Stopping after current prediction"
+              : stopped
+                ? "Inference stopped"
+                : loading
+                  ? "Live inference"
+                  : cached
+                    ? "Cached predictions"
+                    : "Inference complete"}{" "}
             · {scenario.transactions.length.toLocaleString()} /{" "}
             {inferenceTotal.toLocaleString()} transactions ·{" "}
             {scenario.origin === "ibm"
               ? "IBM synthetic dataset"
               : scenario.origin}
           </span>
+          <button
+            disabled={stopping || (!loading && !playing)}
+            onClick={stopWork}
+          >
+            {stopping ? "Stopping…" : "Stop mapping & inference"}
+          </button>
           <button onClick={() => setTab("Inference monitor")}>
             View inference monitor
           </button>
@@ -453,10 +497,10 @@ export default function App() {
                 .filter((r) => r.source === r.target)
                 .length.toLocaleString()}{" "}
               self-transfers · {rows.filter((r) => r.label === 1).length}{" "}
-              laundering labels. Self-transfers appear as loops; separate curves
-              represent repeated transfers. Paths require increasing timestamps
-              and the same currency. Accounts outside the selected neighborhood
-              are not shown.
+              laundering labels. Self-transfers are hidden from the graph;
+              separate curves represent repeated transfers. Paths require
+              increasing timestamps and the same currency. Accounts outside the
+              selected neighborhood are not shown.
             </span>
           </div>
         )}

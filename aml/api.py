@@ -2,7 +2,7 @@ import json
 import os
 import sqlite3
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Event
 from collections import OrderedDict
 from contextlib import contextmanager
 from uuid import uuid4
@@ -32,6 +32,17 @@ monitor_lock = Lock()
 monitor = {"state": "idle", "processed": 0, "total": 0, "errors": 0,
            "cache_hits": 0, "total_ms": 0.0, "started": None, "scenario": "", "last_error": None, "ended": None}
 recent = deque(maxlen=120)
+active_runs = {}
+
+
+@app.post("/api/inference/{run_id}/stop")
+def stop_inference(run_id: str):
+    with monitor_lock:
+        signal = active_runs.get(run_id)
+        if signal is not None:
+            signal.set()
+    return {"stop_requested": signal is not None}
+
 
 
 def record_inference(tx, score, latency):
@@ -143,16 +154,22 @@ def stream_scenario(sid: str, fresh: bool = False):
     if scorer.error:
         raise HTTPException(503, scorer.error)
 
+    run_id = uuid4().hex
+    stop_signal = Event()
+
     def event(kind, payload):
         return f"event: {kind}\ndata: {json.dumps(payload)}\n\n"
 
-    def generate():
+    def generate_rows():
         import hashlib
         key = (scorer, hashlib.sha256(value.model_dump_json().encode()).hexdigest())
         yield event("meta", {"id": sid, "name": value.name, "description": value.description,
                               "origin": value.origin, "transactions": [], "model": scorer.status(),
-                              "total": len(value.transactions)})
+                              "total": len(value.transactions), "run_id": run_id})
         with scoring_lock:
+            if stop_signal.is_set():
+                yield event("stopped", {})
+                return
             if not fresh and key in score_cache:
                 with monitor_lock:
                     monitor["cache_hits"] += 1
@@ -166,6 +183,11 @@ def stream_scenario(sid: str, fresh: bool = False):
             history, rows = History(), []
             try:
                 for tx in sorted(value.transactions, key=lambda t: (t.timestamp, t.id)):
+                    if stop_signal.is_set():
+                        with monitor_lock:
+                            monitor.update(state="stopped", ended=time())
+                        yield event("stopped", {})
+                        return
                     features = history.observe(tx)
                     start = perf_counter()
                     score, reasons = scorer.predict(tx, features)
@@ -197,6 +219,15 @@ def stream_scenario(sid: str, fresh: bool = False):
                     if monitor["state"] == "running":
                         monitor["state"] = "cancelled"
                         monitor["ended"] = time()
+
+    def generate():
+        with monitor_lock:
+            active_runs[run_id] = stop_signal
+        try:
+            yield from generate_rows()
+        finally:
+            with monitor_lock:
+                active_runs.pop(run_id, None)
 
     return StreamingResponse(generate(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

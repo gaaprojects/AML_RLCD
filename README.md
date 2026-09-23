@@ -146,3 +146,8 @@ The installed pilot's exported test report contains 10,000 transactions and 24 p
 Inference monitor also displays elapsed wall time, cumulative model-call time, an estimated remaining duration, CPU utilization normalized across logical processors, server resident/peak RAM, system RAM availability, and cumulative process CPU seconds. Process measurements include API overhead and model loading; they are not model-only measurements. Power and energy usage are not measured. Behavior metrics and the probability histogram cover only the most recent 120 calls.
 
 The downloaded replay was compared against the original CSV: all 2,000 normalized records matched. It contains 2,469 accounts, 1,444 self-transfers, 18 repeated directed account pairs, and no positive labels. Auditing paths from every account found no multi-hop paths satisfying the strict timestamp and currency rules in this slice. Graph curves now separate repeated/reverse transfers, show exact transaction tooltips, and preserve cents in amounts. These are actual records from IBM's synthetic dataset, not real bank transactions.
+
+
+### Stopping work and graph connections
+
+Use **Stop mapping & inference** to stop replay playback and request cancellation of the active inference stream. An in-flight CPU prediction finishes before cancellation is acknowledged. Completed predictions stay visible; incomplete runs are not cached. **Run inference again** starts a fresh run. Graphs exclude self-transfers and self-only accounts; the transaction table retains all source records.
