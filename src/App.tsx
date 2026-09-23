@@ -444,6 +444,22 @@ export default function App() {
             </span>
           </div>
         </div>
+        {scenario.origin === "ibm" && (
+          <div className="dataset-note">
+            <strong>IBM synthetic transaction records</strong>
+            <span>
+              {rows.length.toLocaleString()} observed transfers ·{" "}
+              {rows
+                .filter((r) => r.source === r.target)
+                .length.toLocaleString()}{" "}
+              self-transfers · {rows.filter((r) => r.label === 1).length}{" "}
+              laundering labels. Self-transfers appear as loops; separate curves
+              represent repeated transfers. Paths require increasing timestamps
+              and the same currency. Accounts outside the selected neighborhood
+              are not shown.
+            </span>
+          </div>
+        )}
         <div className="metrics-grid">
           <div className="metric">
             <span>
@@ -759,7 +775,12 @@ export default function App() {
                     >
                       <td>
                         <span className="mono">{r.id.slice(0, 14)}</span>
-                        <small>{clock(r.timestamp)} UTC</small>
+                        <small>
+                          {new Date(r.timestamp)
+                            .toISOString()
+                            .replace("T", " ")
+                            .replace(".000Z", " UTC")}
+                        </small>
                       </td>
                       <td>{r.source}</td>
                       <td>{r.target}</td>
@@ -819,7 +840,29 @@ export default function App() {
             </div>
             {tx && (
               <div className="transaction-detail">
-                <span className="tiny-label">SELECTED TRANSFER</span>
+                <span className="tiny-label">
+                  SELECTED TRANSFER · DATASET RECORD
+                </span>
+                <strong>{money(tx.amount, tx.currency)}</strong>
+                <details>
+                  <summary>Inspect normalized transaction record</summary>
+                  <pre>
+                    {JSON.stringify(
+                      {
+                        id: tx.id,
+                        timestamp: tx.timestamp,
+                        source: tx.source,
+                        target: tx.target,
+                        amount: tx.amount,
+                        currency: tx.currency,
+                        payment_format: tx.payment_format,
+                        label: tx.label,
+                      },
+                      null,
+                      2,
+                    )}
+                  </pre>
+                </details>
                 <strong>
                   {tx.id} · {tx.source} → {tx.target}
                 </strong>

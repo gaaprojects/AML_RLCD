@@ -139,3 +139,10 @@ The workspace selects the newest imported IBM replay by default. Predictions str
 Laya inference preserves full probability precision before applying thresholds. The slider uses a logarithmic scale from 1e-7 to 1 for Laya; the adjacent numeric field permits exact values, including zero. Blue marks selected paths and recall, amber marks alerts and precision, and dashed lines distinguish the latter. Confusion-matrix outcomes also have text labels and separate accents.
 
 The installed pilot's exported test report contains 10,000 transactions and 24 positives: recall 83.33%, precision 0.45%, and 4,390 false alerts. Its 2,000-row imported replay is from the beginning of the training period; replay metrics are not held-out test performance. IBM transactions are synthetic, not a live bank feed.
+
+
+### Resource monitoring and replay audit
+
+Inference monitor also displays elapsed wall time, cumulative model-call time, an estimated remaining duration, CPU utilization normalized across logical processors, server resident/peak RAM, system RAM availability, and cumulative process CPU seconds. Process measurements include API overhead and model loading; they are not model-only measurements. Power and energy usage are not measured. Behavior metrics and the probability histogram cover only the most recent 120 calls.
+
+The downloaded replay was compared against the original CSV: all 2,000 normalized records matched. It contains 2,469 accounts, 1,444 self-transfers, 18 repeated directed account pairs, and no positive labels. Auditing paths from every account found no multi-hop paths satisfying the strict timestamp and currency rules in this slice. Graph curves now separate repeated/reverse transfers, show exact transaction tooltips, and preserve cents in amounts. These are actual records from IBM's synthetic dataset, not real bank transactions.

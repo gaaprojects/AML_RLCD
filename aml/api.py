@@ -11,6 +11,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse
 from time import perf_counter, time
 from collections import deque
+import psutil
+process = psutil.Process()
+resource_lock = Lock()
+process.cpu_percent(None)
 from aml.domain import Scenario
 from aml.demo import demo_scenario
 from aml.features import History
@@ -26,7 +30,7 @@ scoring_lock = Lock()
 score_cache = OrderedDict()
 monitor_lock = Lock()
 monitor = {"state": "idle", "processed": 0, "total": 0, "errors": 0,
-           "cache_hits": 0, "total_ms": 0.0, "started": None, "scenario": "", "last_error": None}
+           "cache_hits": 0, "total_ms": 0.0, "started": None, "scenario": "", "last_error": None, "ended": None}
 recent = deque(maxlen=120)
 
 
@@ -48,6 +52,17 @@ def inference_status():
     result["throughput"] = n * 1000 / result["total_ms"] if result["total_ms"] else 0
     times = sorted(r["latency_ms"] for r in result["recent"])
     result["p95_ms"] = times[min(len(times)-1, int(len(times)*.95))] if times else None
+    result["elapsed_seconds"] = max(0, (result["ended"] or time()) - result["started"]) if result["started"] else 0
+    result["remaining_seconds"] = (result["total"]-n)*result["mean_ms"]/1000 if n and result["state"] == "running" else None
+    with resource_lock:
+        mem = process.memory_info()
+        system = psutil.virtual_memory()
+        cpu = process.cpu_times()
+        result["resources"] = {"process_cpu_percent": process.cpu_percent(None) / (psutil.cpu_count() or 1),
+            "rss_mb": mem.rss / 1024**2, "peak_rss_mb": getattr(mem, "peak_wset", mem.rss) / 1024**2,
+            "system_ram_percent": system.percent, "available_ram_mb": system.available / 1024**2,
+            "cpu_seconds": cpu.user + cpu.system, "threads": process.num_threads(),
+            "logical_cpus": psutil.cpu_count(), "device": "CPU"}
     result["model"] = scorer.status()
     return result
 
@@ -146,7 +161,7 @@ def stream_scenario(sid: str, fresh: bool = False):
                 return
             with monitor_lock:
                 monitor.update(state="running", processed=0, total=len(value.transactions),
-                               total_ms=0.0, started=time(), scenario=value.name, last_error=None)
+                               total_ms=0.0, started=time(), ended=None, scenario=value.name, last_error=None)
                 recent.clear()
             history, rows = History(), []
             try:
@@ -165,20 +180,23 @@ def stream_scenario(sid: str, fresh: bool = False):
                     score_cache.popitem(last=False)
                 with monitor_lock:
                     monitor["state"] = "complete"
+                    monitor["ended"] = time()
                 yield event("complete", {"cached": False})
             except GeneratorExit:
                 with monitor_lock:
                     monitor["state"] = "cancelled"
+                    monitor["ended"] = time()
                 raise
             except Exception as exc:
                 with monitor_lock:
-                    monitor.update(state="error", last_error=str(exc))
+                    monitor.update(state="error", last_error=str(exc), ended=time())
                     monitor["errors"] += 1
                 yield event("failure", {"detail": str(exc)})
             finally:
                 with monitor_lock:
                     if monitor["state"] == "running":
                         monitor["state"] = "cancelled"
+                        monitor["ended"] = time()
 
     return StreamingResponse(generate(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

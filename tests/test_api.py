@@ -83,3 +83,15 @@ def test_default_prefers_ibm_and_stream_errors_are_visible(client, monkeypatch):
     status = client.get("/api/inference").json()
     assert status["state"] == "error"
     assert status["last_error"] == "Prediction failed"
+
+
+def test_resource_metrics_and_completed_timer(client):
+    client.get("/api/scenarios/demo/stream?fresh=true")
+    first = client.get("/api/inference").json()
+    second = client.get("/api/inference").json()
+    assert first["elapsed_seconds"] == second["elapsed_seconds"]
+    assert first["elapsed_seconds"] >= 0
+    assert first["remaining_seconds"] is None
+    assert first["resources"]["rss_mb"] > 0
+    assert first["resources"]["logical_cpus"] >= 1
+    assert 0 <= first["resources"]["system_ram_percent"] <= 100

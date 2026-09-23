@@ -21,5 +21,5 @@ export function evaluate(rows: Transaction[], threshold: number) {
 export const pct = (n: number | null) =>
   n === null ? "—" : `${Math.round(n * 100)}%`;
 export const money = (n: number, currency = "USD") =>
-  `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n)} ${currency}`;
+  `${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: currency === "BTC" ? 8 : 2 }).format(n)} ${currency}`;
 export const clock = (s: string) => new Date(s).toISOString().slice(11, 16);

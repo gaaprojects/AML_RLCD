@@ -25,7 +25,9 @@ export default function Graph({
     const focus = all.includes(account) ? account : all[0];
     const neighbors = new Set<string>(focus ? [focus] : []);
     // Include the selected path first, then grow the account neighborhood.
-    for (const r of rows.filter((r) => path.includes(r.id))) {
+    for (const r of rows.filter(
+      (r) => path.includes(r.id) || r.id === selected,
+    )) {
       neighbors.add(r.source);
       neighbors.add(r.target);
     }
@@ -68,7 +70,7 @@ export default function Graph({
       edges: rows.filter((r) => pos[r.source] && pos[r.target]),
       hidden: all.length - ids.length,
     };
-  }, [rows, account, path]);
+  }, [rows, account, path, selected]);
   return (
     <div className="graph-canvas">
       <div className="graph-overlay">
@@ -142,12 +144,21 @@ export default function Graph({
               y2 = b.y - (dy / dist) * 30;
             const highlighted = path.includes(r.id) || r.id === selected;
             const hot = r.score >= threshold;
-            const returning = r.target === "NORTHSTAR-01";
-            const d = returning
-              ? `M ${x1} ${y1} Q 450 0 ${x2} ${y2}`
-              : r.source === r.target
-                ? `M ${a.x - 15} ${a.y - 20} C ${a.x - 70} ${a.y - 90}, ${a.x + 70} ${a.y - 90}, ${a.x + 15} ${a.y - 20}`
-                : `M ${x1} ${y1} L ${x2} ${y2}`;
+            const siblings = layout.edges.filter(
+              (e) =>
+                (e.source === r.source && e.target === r.target) ||
+                (e.source === r.target && e.target === r.source),
+            );
+            const lane = siblings.findIndex((e) => e.id === r.id);
+            const offset = (lane - (siblings.length - 1) / 2) * 32;
+            const orientation = r.source < r.target ? 1 : -1;
+            const cx = (a.x + b.x) / 2 - (dy / dist) * offset * orientation;
+            const cy = (a.y + b.y) / 2 + (dx / dist) * offset * orientation;
+            const loop = 70 + lane * 22;
+            const d =
+              r.source === r.target
+                ? `M ${a.x - 15} ${a.y - 20} C ${a.x - loop} ${a.y - loop - 20}, ${a.x + loop} ${a.y - loop - 20}, ${a.x + 15} ${a.y - 20}`
+                : `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`;
             return (
               <g
                 key={r.id}
@@ -158,6 +169,7 @@ export default function Graph({
                 aria-label={`Transfer ${r.source} to ${r.target}, ${money(r.amount, r.currency)}`}
                 onKeyDown={(e) => e.key === "Enter" && onTransaction(r.id)}
               >
+                <title>{`${r.id} | ${r.timestamp} | ${r.source} → ${r.target} | ${r.amount} ${r.currency} | ${r.payment_format}`}</title>
                 <path d={d} className="edge-hit" />
                 <path
                   d={d}
@@ -169,8 +181,12 @@ export default function Graph({
                 />
                 {(hot || highlighted) && i < 24 && (
                   <text
-                    x={returning ? 450 : (a.x + b.x) / 2}
-                    y={returning ? 95 : (a.y + b.y) / 2 - 10}
+                    x={r.source === r.target ? a.x : (a.x + 2 * cx + b.x) / 4}
+                    y={
+                      r.source === r.target
+                        ? a.y - loop
+                        : (a.y + 2 * cy + b.y) / 4 - 10
+                    }
                     className="edge-label"
                   >
                     {money(r.amount, r.currency)}
