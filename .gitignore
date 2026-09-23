@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+data/
+models/
+artifacts/
+*.egg-info/
+.env
+test-results/
+.cache/
+*.tsbuildinfo

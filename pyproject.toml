@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aml-rlcd"
+version = "0.1.0"
+description = "Local AML investigation simulator and Laya training pipeline"
+requires-python = ">=3.11"
+dependencies = ["fastapi>=0.115,<1", "uvicorn>=0.30,<1", "pydantic>=2.9,<3"]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9", "httpx>=0.27,<1"]
+ml = ["laya @ git+https://github.com/NandhaKishorM/laya.git@573e5b62696ba441230cd6be71d593331b5d23af", "torch>=2.5,<3", "transformers>=4.48,<6", "scikit-learn>=1.5,<2", "safetensors>=0.4", "huggingface_hub>=0.26"]
+data = ["kagglehub>=0.3,<1"]
+
+[tool.setuptools.packages.find]
+include = ["aml*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["ml: optional tiny-model training/export integration test"]
