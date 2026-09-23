@@ -32,7 +32,20 @@ The original synthetic **Harbor** scenario works immediately with clearly labele
 - Create accounts implicitly by adding transfers in the on-screen editor. Chain, cycle and fan-in templates are editable. Custom scenarios are saved in local SQLite and always unlabeled.
 - Export the selected account's evidence as JSON. Transaction tables show at most 200 matching rows; scenarios contain at most 2,000 transactions for responsive investigation.
 
-Account risk is the maximum observed incident transaction score. It is not a calibrated account-level probability. Fan-in/fan-out indicators and chain/cycle paths are heuristic candidates, not supervised pattern predictions. The current IBM transaction parser uses binary laundering labels; a separate verified pattern-label source is required before training a pattern classifier.
+Account risk is the maximum observed incident transaction score. It is not a calibrated account-level probability. Fan-in/fan-out indicators and chain/cycle paths are heuristic candidates, not supervised pattern predictions. The current training pipeline uses binary laundering labels. IBM also distributes `HI-Small_Patterns.txt`: the downloaded file contains 370 attempts across eight pattern types and 3,209 transaction lines. Supervised pattern classification remains pending an audited join to transaction rows and a separate evaluation; missing sidecar entries must not be interpreted as legitimate transactions.
+
+### Full dataset verification
+
+On 23 September 2026, complete-file preparation successfully processed 5,078,345 transactions from `HI-Small_Trans.csv` (SHA-256 `b19d39f515523373f991b689c07e11e7b0b95c17a2c27a87d91584ae16c5b040`). The chronological partitions contain:
+
+| Partition | Transactions | Laundering labels |
+| --- | ---: | ---: |
+| Train | 3,046,861 | 2,297 |
+| Validation | 761,731 | 777 |
+| Calibration | 507,650 | 542 |
+| Test | 762,103 | 1,561 |
+
+The first 2,000 transactions are installed in the local investigation database as **IBM / HI-Small_Trans**. Dataset preparation is verified; an AML-trained Laya checkpoint and its predictive performance have not yet been produced. The notebook's small default training run is a feasibility pilot, not a benchmark.
 
 ## Train in Colab Free
 
